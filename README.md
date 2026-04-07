@@ -22,6 +22,8 @@
 
 > 如果升级后部分功能缺失，请先清空本地挂载目录下的openbox目录(如`./config/.config/openbox`)。
 
+> 仓库内置了上游微信版本自动检测机制：GitHub Actions 会定时检查官方 `.deb` 包版本，检测到变化后自动更新 `versions/upstream.env` 并触发镜像构建。
+
 ## 功能特性
 
 - 🌐 **浏览器访问**：通过 Web 浏览器直接使用微信，无需本地安装
@@ -35,6 +37,7 @@
 - 🪟 **窗口切换器**：左上角增加切换悬浮窗，方便切换到后台窗口，为后续添加其它功能做基础
 - 🤖 **自动启动**：可配置自动启动微信和QQ客户端（可选）
 - 📋 **桌面快捷方式集成**：自动扫描 `~/Desktop/` 下的 `.desktop` 文件并添加到右键菜单，方便启动第三方应用（如通过 proot-apps 安装的应用）
+- 📂 **文件管理器**：内置 PCManFM 轻量文件管理器，右键菜单即可启动，方便管理容器内文件
 
 ## 截图展示
 ![微信截图](./docs/images/wechat-selkies-1.jpg)
@@ -62,12 +65,18 @@ Docker Hub镜像：
 docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickrunning/wechat-selkies:latest
 ```
 
+> **精简版镜像**：如果只需要微信（不含 QQ 和文件管理器），可使用 `minimal` 标签，镜像体积更小：
+> ```bash
+> docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri ghcr.io/nickrunning/wechat-selkies:minimal
+> ```
+> 精简版也支持版本号标签，如 `:1.2.3-minimal`、`:1.2-minimal`，方便锁定特定版本。
+
 2. **访问微信**
    
    在浏览器中访问：`https://localhost:3001` 或 `https://<服务器IP>:3001`
    > **注意：** 映射3000端口用于HTTP访问，3001端口用于HTTPS访问，建议使用HTTPS。
 
-### docker-compose 部署
+### Docker Compose 部署
 1. **创建项目目录并进入**
    ```bash
    mkdir wechat-selkies
@@ -80,27 +89,43 @@ docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickr
         image: nickrunning/wechat-selkies:latest    # or ghcr.io/nickrunning/wechat-selkies:latest
         container_name: wechat-selkies
         ports:
-          - "3000:3000"       # http port
-          - "3001:3001"       # https port
+          - "${HTTP_PORT:-3000}:3000"
+          - "${HTTPS_PORT:-3001}:3001"
         restart: unless-stopped
         volumes:
           - ./config:/config
         devices:
-          - /dev/dri:/dev/dri # optional, for hardware acceleration
+          - /dev/dri:/dev/dri
         environment:
-          - PUID=1000                    # user ID, set according to your system
-          - PGID=100                     # group ID, set according to your system
-          - TZ=Asia/Shanghai             # timezone, set according to your timezone
-          - LC_ALL=zh_CN.UTF-8           # locale, set according to your needs
-          - AUTO_START_WECHAT=true       # default is true
-          - AUTO_START_QQ=false          # default is false
-          # - CUSTOM_USER=<Your Name>      # recommended to set a custom user name
-          # - PASSWORD=<Your Password>     # recommended to set a password for selkies web ui
-        shm_size: "1gb"                  # recommended, will improve performance
+          - PUID=${PUID:-1000}
+          - PGID=${PGID:-100}
+          - TZ=Asia/Shanghai
+          - LC_ALL=zh_CN.UTF-8
+          - AUTO_START_WECHAT=true
+          - AUTO_START_QQ=false
+          - CUSTOM_USER=${CUSTOM_USER:-}
+          - PASSWORD=${PASSWORD:-}
+        shm_size: "${SHM_SIZE:-1gb}"
     ```
-3. **启动服务**
+3. **创建 `.env` 文件（可选）**
+
+   复制 `.env.example` 并按需修改，未设置的变量将使用默认值：
    ```bash
-   docker-compose up -d
+   cp .env.example .env
+   ```
+   `.env` 文件示例：
+   ```env
+   HTTP_PORT=3000
+   HTTPS_PORT=3001
+   PUID=1000
+   PGID=100
+   # CUSTOM_USER=
+   # PASSWORD=
+   SHM_SIZE=1gb
+   ```
+4. **启动服务**
+   ```bash
+   docker compose up -d
    ```
 
 ### 源码部署
@@ -113,12 +138,17 @@ docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickr
 
 2. **启动服务**
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 3. **访问微信**
 
    在浏览器中访问：`https://localhost:3001` 或 `https://<服务器IP>:3001`
+
+> **构建精简版**：源码部署时可通过 build-arg 构建仅含微信的精简镜像：
+> ```bash
+> docker build --build-arg INSTALL_QQ=false --build-arg INSTALL_PCMANFM=false -t wechat-selkies:minimal .
+> ```
 
 ### 配置说明
 
@@ -136,7 +166,7 @@ docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickr
 
 #### 环境变量配置
 
-在 `docker-compose.yml` 中可以配置以下环境变量：
+在 `docker-compose.yml` 中可以配置以下环境变量，支持通过 `.env` 文件覆盖带有 `${VAR:-default}` 的配置项：
 
 | 变量名 | 默认值 | 说明 |
 |--------|--------|------|
@@ -189,6 +219,7 @@ devices:
 ```
 wechat-selkies/
 ├── docker-compose.yml          # Docker Compose 配置文件
+├── .env.example                # 环境变量示例文件
 ├── Dockerfile                  # Docker 镜像构建文件
 ├── LICENSE                     # License
 ├── README.md                   # 项目说明文档
@@ -201,6 +232,33 @@ wechat-selkies/
 
 ## 故障排除
 
+### 更新微信/QQ版本
+
+当微信或QQ提示"版本过期"时，只需重新拉取最新镜像并重建容器即可，聊天记录和配置不受影响：
+
+```bash
+# 使用预构建镜像
+docker compose pull && docker compose up -d
+
+# 使用源码构建
+git pull && docker compose up -d --build
+```
+
+> **注意：** 微信和QQ的安装包 URL 指向官方最新版本，重新构建镜像时会自动下载最新版。
+
+对于仓库维护者，当前自动化流程如下：
+
+1. `Detect Upstream Package Updates` 每 6 小时检查一次微信官方安装包版本，也支持手动触发
+2. 如果检测到版本号或安装包哈希变化，工作流会更新 `versions/upstream.env`
+3. 该文件变更提交到 `master` 后，会自动触发 `Build and Publish Docker Image`
+
+版本状态文件位于 `versions/upstream.env`，当前记录了：
+
+- 微信 amd64/arm64 下载地址
+- 微信 amd64/arm64 解析出的版本号
+- 微信 amd64/arm64 安装包 SHA256
+- 最近一次发生变更的检测时间
+
 ### 常见问题
 
 1. **无法访问 Web UI**
@@ -211,7 +269,7 @@ wechat-selkies/
 
 查看容器运行日志：
 ```bash
-docker-compose logs -f wechat-selkies
+docker compose logs -f wechat-selkies
 ```
 
 ## 技术架构

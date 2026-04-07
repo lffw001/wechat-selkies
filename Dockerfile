@@ -13,9 +13,10 @@ LABEL org.opencontainers.image.licenses="GPL-3.0-only"
 # Build arguments for multi-arch support
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
+ARG INSTALL_QQ=true
+ARG INSTALL_PCMANFM=true
 RUN echo "🏗️ Building WeChat-Selkies on $BUILDPLATFORM, targeting $TARGETPLATFORM"
 
-# set environment variables
 RUN apt-get update && \
     apt-get install -y fonts-noto-cjk libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
     libxcb-render-util0 libxcb-xkb1 libxkbcommon-x11-0 \
@@ -27,7 +28,12 @@ RUN apt-get update && \
     libgtk-3-0 libnspr4 libnss3 libpango-1.0-0 libpangocairo-1.0-0 libstdc++6 libx11-6 \
     libxcomposite1 libxdamage1 libxext6 libxfixes3 libxi6 libxrandr2 libxrender1 \
     libxss1 libxtst6 libatomic1 libxcomposite1 libxrender1 libxrandr2 libxkbcommon-x11-0 \
-    libfontconfig1 libdbus-1-3 libnss3 libx11-xcb1 python3-tk stalonetray inotify-tools
+    libfontconfig1 libdbus-1-3 libnss3 libx11-xcb1 stalonetray inotify-tools
+
+ARG INSTALL_PCMANFM
+RUN if [ "$INSTALL_PCMANFM" = "true" ]; then \
+        apt-get install -y --no-install-recommends pcmanfm; \
+    fi
 
 RUN pip install --no-cache-dir python-xlib
 
@@ -45,31 +51,35 @@ RUN case "$TARGETPLATFORM" in \
         exit 1 ;; \
     esac && \
     echo "📦 Downloading WeChat for $WECHAT_ARCH architecture..." && \
-    curl -fsSL -o wechat.deb "$WECHAT_URL" && \
+    curl -fsSL --retry 3 --retry-delay 10 --retry-all-errors -o wechat.deb "$WECHAT_URL" && \
     echo "🔧 Installing WeChat..." && \
     (dpkg -i wechat.deb || (apt-get update && apt-get install -f -y && dpkg -i wechat.deb)) && \
     rm -f wechat.deb && \
     echo "✅ WeChat installation completed for $WECHAT_ARCH"
 
-# Install QQ based on target architecture
-RUN case "$TARGETPLATFORM" in \
-    "linux/amd64") \
-        QQ_URL="https://dldir1v6.qq.com/qqfile/qq/QQNT/Linux/QQ_3.2.22_251203_amd64_01.deb"; \
-        QQ_ARCH="x86_64" ;; \
-    "linux/arm64") \
-        QQ_URL="https://dldir1v6.qq.com/qqfile/qq/QQNT/Linux/QQ_3.2.22_251203_arm64_01.deb"; \
-        QQ_ARCH="arm64" ;; \
-    *) \
-        echo "❌ Unsupported platform: $TARGETPLATFORM" >&2; \
-        echo "Supported platforms: linux/amd64, linux/arm64" >&2; \
-        exit 1 ;; \
-    esac && \
-    echo "📦 Downloading QQ for $QQ_ARCH architecture..." && \
-    curl -fsSL -o qq.deb "$QQ_URL" && \
-    echo "🔧 Installing QQ..." && \
-    (dpkg -i qq.deb || (apt-get update && apt-get install -f -y && dpkg -i qq.deb)) && \
-    rm -f qq.deb && \
-    echo "✅ QQ installation completed for $QQ_ARCH"
+# Install QQ based on target architecture (optional)
+ARG INSTALL_QQ
+RUN if [ "$INSTALL_QQ" = "true" ]; then \
+        case "$TARGETPLATFORM" in \
+        "linux/amd64") \
+            QQ_URL="https://dldir1v6.qq.com/qqfile/qq/QQNT/Linux/QQ_3.2.22_251203_amd64_01.deb"; \
+            QQ_ARCH="x86_64" ;; \
+        "linux/arm64") \
+            QQ_URL="https://dldir1v6.qq.com/qqfile/qq/QQNT/Linux/QQ_3.2.22_251203_arm64_01.deb"; \
+            QQ_ARCH="arm64" ;; \
+        *) \
+            echo "❌ Unsupported platform: $TARGETPLATFORM" >&2; \
+            exit 1 ;; \
+        esac && \
+        echo "📦 Downloading QQ for $QQ_ARCH architecture..." && \
+        curl -fsSL --retry 3 --retry-delay 10 --retry-all-errors -o qq.deb "$QQ_URL" && \
+        echo "🔧 Installing QQ..." && \
+        (dpkg -i qq.deb || (apt-get update && apt-get install -f -y && dpkg -i qq.deb)) && \
+        rm -f qq.deb && \
+        echo "✅ QQ installation completed for $QQ_ARCH"; \
+    else \
+        echo "⏭️ Skipping QQ installation (INSTALL_QQ=$INSTALL_QQ)"; \
+    fi
 
 # Clean up
 RUN apt-get purge -y --autoremove

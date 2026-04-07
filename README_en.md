@@ -22,6 +22,8 @@ This project packages the official WeChat/QQ Linux client in a Docker container,
 
 > If some features are missing after an upgrade, please clear the `openbox` directory in the local mounted directory (e.g., `./config/.config/openbox`).
 
+> This repository includes automatic upstream WeChat version detection: GitHub Actions periodically checks the official `.deb` packages, updates `versions/upstream.env` when changes are detected, and then triggers the image build workflow.
+
 ## Features
 
 - 🌐 **Browser Access**: Use WeChat directly through web browsers without local installation
@@ -35,6 +37,7 @@ This project packages the official WeChat/QQ Linux client in a Docker container,
 - 🪟 **Window Switcher**: Added a floating window switcher in the top left corner for easy switching to background windows, laying the foundation for adding other features in the future
 - 🤖 **Auto Start**: Configurable auto-start for WeChat and QQ clients (optional)
 - 📋 **Desktop Shortcut Integration**: Automatically scans `.desktop` files in `~/Desktop/` and adds them to the right-click menu, making it easy to launch third-party applications (e.g., apps installed via proot-apps)
+- 📂 **File Manager**: Built-in PCManFM lightweight file manager, accessible from the right-click menu for easy file management inside the container
 
 ## Screenshots
 ![WeChat Screenshot](./docs/images/wechat-selkies-1.jpg)
@@ -60,12 +63,18 @@ Docker Hub image:
 docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickrunning/wechat-selkies:latest
 ```
 
+> **Minimal image**: If you only need WeChat (without QQ and file manager), use the `minimal` tag for a smaller image:
+> ```bash
+> docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri ghcr.io/nickrunning/wechat-selkies:minimal
+> ```
+> Versioned minimal tags are also available, e.g. `:1.2.3-minimal`, `:1.2-minimal`, for pinning to a specific release.
+
 2. **Access WeChat**
    
    Open in browser: `https://localhost:3001` or `https://<server-ip>:3001`
    > **Note**: 3001 port is for HTTPS access. If you need HTTP access, please map port 3000 as well.
 
-### docker-compose Deployment
+### Docker Compose Deployment
 1. **Create project directory and navigate into it**
    ```bash
    mkdir wechat-selkies
@@ -78,27 +87,43 @@ docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickr
         image: nickrunning/wechat-selkies:latest    # or ghcr.io/nickrunning/wechat-selkies:latest
         container_name: wechat-selkies
         ports:
-          - "3000:3000"       # http port
-          - "3001:3001"       # https port
+          - "${HTTP_PORT:-3000}:3000"
+          - "${HTTPS_PORT:-3001}:3001"
         restart: unless-stopped
         volumes:
           - ./config:/config
         devices:
-          - /dev/dri:/dev/dri # optional, for hardware acceleration
+          - /dev/dri:/dev/dri
         environment:
-          - PUID=1000                    # user ID, set according to your system
-          - PGID=100                     # group ID, set according to your system
-          - TZ=Asia/Shanghai             # timezone, set according to your timezone
-          - LC_ALL=zh_CN.UTF-8           # locale, set according to your needs
-          - AUTO_START_WECHAT=true       # default is true
-          - AUTO_START_QQ=false          # default is false
-          # - CUSTOM_USER=<Your Name>      # recommended to set a custom user name
-          # - PASSWORD=<Your Password>     # recommended to set a password for selkies web ui
-        shm_size: "1gb"                  # recommended, will improve performance
+          - PUID=${PUID:-1000}
+          - PGID=${PGID:-100}
+          - TZ=Asia/Shanghai
+          - LC_ALL=zh_CN.UTF-8
+          - AUTO_START_WECHAT=true
+          - AUTO_START_QQ=false
+          - CUSTOM_USER=${CUSTOM_USER:-}
+          - PASSWORD=${PASSWORD:-}
+        shm_size: "${SHM_SIZE:-1gb}"
     ```
-3. **Start the service**
+3. **Create `.env` file (optional)**
+
+   Copy `.env.example` and modify as needed. Variables not set will use default values:
    ```bash
-   docker-compose up -d
+   cp .env.example .env
+   ```
+   `.env` file example:
+   ```env
+   HTTP_PORT=3000
+   HTTPS_PORT=3001
+   PUID=1000
+   PGID=100
+   # CUSTOM_USER=
+   # PASSWORD=
+   SHM_SIZE=1gb
+   ```
+4. **Start the service**
+   ```bash
+   docker compose up -d
    ```
 
 ### Source Code Deployment
@@ -111,12 +136,17 @@ docker run -it -p 3001:3001 -v ./config:/config --device /dev/dri:/dev/dri nickr
 
 2. **Start the service**
    ```bash
-   docker-compose up -d
+   docker compose up -d
    ```
 
 3. **Access WeChat**
 
    Open in browser: `https://localhost:3001` or `https://<server-ip>:3001`
+
+> **Build minimal version**: When building from source, use build-arg to create a WeChat-only image:
+> ```bash
+> docker build --build-arg INSTALL_QQ=false --build-arg INSTALL_PCMANFM=false -t wechat-selkies:minimal .
+> ```
 
 ### Configuration
 
@@ -134,7 +164,7 @@ This project supports pushing to both GitHub Container Registry and Docker Hub. 
 
 #### Environment Variables
 
-Configure the following environment variables in `docker-compose.yml`:
+Configure the following environment variables in `docker-compose.yml`. Variables with `${VAR:-default}` syntax can be overridden via a `.env` file:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -187,6 +217,7 @@ devices:
 ```
 wechat-selkies/
 ├── docker-compose.yml          # Docker Compose configuration file
+├── .env.example                # Environment variables example file
 ├── Dockerfile                  # Docker image build file
 ├── LICENSE                     # License
 ├── README.md                   # Project documentation (Chinese)
@@ -200,6 +231,33 @@ wechat-selkies/
 
 ## Troubleshooting
 
+### Updating WeChat/QQ Version
+
+When WeChat or QQ displays a "version outdated" message, simply pull the latest image and recreate the container. Your chat history and configurations will be preserved:
+
+```bash
+# Using pre-built images
+docker compose pull && docker compose up -d
+
+# Using source code build
+git pull && docker compose up -d --build
+```
+
+> **Note:** The WeChat and QQ download URLs point to the latest official versions. Rebuilding the image will automatically download the newest version.
+
+For maintainers, the current automation flow is:
+
+1. `Detect Upstream Package Updates` checks the official WeChat packages every 6 hours and can also be triggered manually
+2. If the version or package hash changes, the workflow updates `versions/upstream.env`
+3. Once that file is committed to `master`, it automatically triggers `Build and Publish Docker Image`
+
+The version state file is stored at `versions/upstream.env` and currently records:
+
+- WeChat amd64/arm64 download URLs
+- Parsed WeChat amd64/arm64 package versions
+- WeChat amd64/arm64 package SHA256 hashes
+- The last detection time that actually changed the tracked state
+
 ### Common Issues
 
 1. **Unable to access Web UI**
@@ -210,7 +268,7 @@ wechat-selkies/
 
 View container runtime logs:
 ```bash
-docker-compose logs -f wechat-selkies
+docker compose logs -f wechat-selkies
 ```
 
 ## Technical Architecture

@@ -1,0 +1,32 @@
+name: Detect Upstream Package Updates
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 */6 * * *'
+
+permissions:
+  contents: write
+
+jobs:
+  detect-wechat-updates:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect upstream package changes
+        id: detect
+        run: ./.github/scripts/detect-upstream.sh
+
+      - name: Commit updated version state
+        if: steps.detect.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add versions/upstream.env
+          git commit -m "chore: update upstream package state"
+          git push

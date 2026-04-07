@@ -1,11 +1,29 @@
 #!/bin/bash
 
+# clean up stale dbus pid file to prevent startup failures after container restart
+rm -f /run/dbus/pid
+
 # configure openbox dock mode for stalonetray
 if [ ! -f /config/.config/openbox/rc.xml ] || grep -A20 "<dock>" /config/.config/openbox/rc.xml | grep -q "<noStrut>no</noStrut>"; then
     mkdir -p /config/.config/openbox
     [ ! -f /config/.config/openbox/rc.xml ] && cp /etc/xdg/openbox/rc.xml /config/.config/openbox/
     sed -i '/<dock>/,/<\/dock>/s/<noStrut>no<\/noStrut>/<noStrut>yes<\/noStrut>/' /config/.config/openbox/rc.xml
     openbox --reconfigure
+fi
+
+# configure default window behavior: open WeChat/QQ as normal windows instead of maximized
+OB_RC="/config/.config/openbox/rc.xml"
+if [ -f "$OB_RC" ] && ! grep -q '<application class="wechat"' "$OB_RC"; then
+    sed -i '/<\/openbox_config>/i \
+  <applications>\
+    <application class="wechat">\
+      <maximized>no</maximized>\
+    </application>\
+    <application class="QQ">\
+      <maximized>no</maximized>\
+    </application>\
+  </applications>' "$OB_RC"
+    openbox --reconfigure 2>/dev/null || true
 fi
 
 # generate openbox menu from defaults + ~/Desktop/*.desktop files
