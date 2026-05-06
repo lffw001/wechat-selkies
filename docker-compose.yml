@@ -10,12 +10,12 @@ services:
     devices:
       - /dev/dri:/dev/dri # optional, for hardware acceleration
     ports:
-      - "3000:3000"       # http port
-      - "3001:3001"       # https port
+      - "${HTTP_PORT:-3000}:3000"       # http port
+      - "${HTTPS_PORT:-3001}:3001"      # https port
     restart: unless-stopped
     environment:
-      - PUID=1000         # set user id according to your system
-      - PGID=100          # set group id according to your system
-      # - CUSTOM_USER=<Your Name>   # recommended to set a custom user name
-      # - PASSWORD=<Your Password>  # recommended to set a password for selkies web ui
-    shm_size: "1gb"       # recommended, will improve performance
+      - PUID=${PUID:-1000}              # set user id according to your system
+      - PGID=${PGID:-100}               # set group id according to your system
+      - CUSTOM_USER=${CUSTOM_USER:-}    # recommended to set a custom user name
+      - PASSWORD=${PASSWORD:-}          # recommended to set a password for selkies web ui
+    shm_size: "${SHM_SIZE:-1gb}"        # recommended, will improve performance
